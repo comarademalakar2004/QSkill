@@ -1,0 +1,90 @@
+**STEP 1: Install Required Libraries**
+
+
+!pip install -q openai-whisper
+!pip install -q deep-translator
+!pip install -q diffusers transformers accelerate safetensors
+!pip install -q sentencepiece
+
+**STEP 2: Import Libraries**
+
+import torch
+import whisper
+
+from diffusers import StableDiffusionPipeline
+from deep_translator import GoogleTranslator
+
+from google.colab import files
+from PIL import Image
+
+print("Libraries Loaded")
+
+**STEP 3: Upload Audio File**
+
+uploaded = files.upload()
+
+audio_file = list(uploaded.keys())[0]
+
+print("Uploaded File:", audio_file)
+
+**STEP 4: Convert Speech to Text**
+
+model = whisper.load_model("large")
+
+result = model.transcribe(audio_file)
+
+speech_text = result["text"]
+
+print("\nDetected Speech:")
+print(speech_text)
+
+**STEP 5: Translate to English**
+
+english_prompt = GoogleTranslator(
+    source='auto',
+    target='en'
+).translate(speech_text)
+
+print("\nEnglish Prompt:")
+print(english_prompt)
+
+**STEP 6: Improve Prompt**
+
+enhanced_prompt = f"""
+{english_prompt},
+ultra realistic,
+cinematic lighting,
+8k quality,
+highly detailed,
+professional photography,
+masterpiece
+"""
+
+print(enhanced_prompt)
+
+**STEP 7: Load Stable Diffusion**
+
+pipe = StableDiffusionPipeline.from_pretrained(
+    "runwayml/stable-diffusion-v1-5",
+    torch_dtype=torch.float16
+)
+
+pipe = pipe.to("cuda")
+
+print("Model Loaded")
+
+**STEP 8: Generate Image**
+
+image = pipe(
+    enhanced_prompt,
+    num_inference_steps=30,
+    guidance_scale=7.5
+).images[0]
+
+image.save("generated_image.png")
+
+image
+
+**STEP 9: Download Generated Image**
+
+files.download("generated_image.png")
