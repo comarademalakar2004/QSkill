@@ -1,0 +1,359 @@
+import speech_recognition as sr
+from gtts import gTTS
+import requests
+import datetime
+import time
+import os
+import threading
+import pygame
+import feedparser
+from zoneinfo import ZoneInfo
+
+# =========================
+# TEXT TO SPEECH
+# =========================
+
+pygame.mixer.init()
+
+def speak(text):
+    print(f"\nAssistant: {text}")
+
+    filename = "response.mp3"
+
+    tts = gTTS(text=text, lang="en")
+    tts.save(filename)
+
+    pygame.mixer.music.load(filename)
+    pygame.mixer.music.play()
+
+    while pygame.mixer.music.get_busy():
+        continue
+
+    pygame.mixer.music.unload()
+
+    if os.path.exists(filename):
+        os.remove(filename)
+
+
+# =========================
+# SPEECH RECOGNITION
+# =========================
+
+def listen():
+    recognizer = sr.Recognizer()
+
+    with sr.Microphone() as source:
+        print("\nListening...")
+        recognizer.adjust_for_ambient_noise(source)
+
+        audio = recognizer.listen(source)
+
+    try:
+        command = recognizer.recognize_google(audio)
+
+        print(f"You: {command}")
+
+        return command.lower()
+
+    except Exception:
+        print("Could not understand audio.")
+        return ""
+
+
+# =========================
+# WEATHER
+# =========================
+
+def get_weather(city):
+
+    geo_url = (
+        f"https://geocoding-api.open-meteo.com/v1/search?"
+        f"name={city}&count=1"
+    )
+
+    geo_response = requests.get(geo_url).json()
+
+    if "results" not in geo_response:
+        return "City not found."
+
+    latitude = geo_response["results"][0]["latitude"]
+    longitude = geo_response["results"][0]["longitude"]
+
+    weather_url = (
+        f"https://api.open-meteo.com/v1/forecast?"
+        f"latitude={latitude}&longitude={longitude}"
+        f"&current=temperature_2m"
+    )
+
+    weather_response = requests.get(weather_url).json()
+
+    temperature = weather_response["current"]["temperature_2m"]
+
+    return (
+        f"The current temperature in "
+        f"{city.title()} is {temperature} degree Celsius."
+    )
+
+
+# =========================
+# NEWS
+# =========================
+
+def get_news():
+
+    feed = feedparser.parse(
+        "https://feeds.bbci.co.uk/news/rss.xml"
+    )
+
+    headlines = []
+
+    for entry in feed.entries[:5]:
+        headlines.append(entry.title)
+
+    return headlines
+
+
+# =========================
+# REMINDER
+# =========================
+
+def reminder_thread(message, seconds):
+
+    time.sleep(seconds)
+
+    speak(f"Reminder. {message}")
+
+
+def set_reminder(message, seconds):
+
+    speak(f"Reminder set for {seconds} seconds.")
+
+    threading.Thread(
+        target=reminder_thread,
+        args=(message, seconds),
+        daemon=True
+    ).start()
+
+
+# =========================
+# TIME
+# =========================
+
+def get_time():
+
+    ist_time = datetime.datetime.now(
+        ZoneInfo("Asia/Kolkata")
+    )
+
+    return ist_time.strftime("%I:%M %p IST")
+
+
+# =========================
+# COMMAND PROCESSOR
+# =========================
+
+def process_command(command):
+
+    command = command.lower().strip()
+
+    # Greetings
+
+    if any(word in command for word in [
+        "hello",
+        "hi",
+        "hey"
+    ]):
+
+        speak("Hello, how can I help you?")
+
+    # Time
+
+    elif "time" in command:
+
+        speak(
+            f"The current time is {get_time()}"
+        )
+
+    # Weather
+
+    elif any(keyword in command for keyword in [
+        "weather",
+        "temperature",
+        "climate",
+        "forecast"
+    ]):
+
+        city = command
+
+        phrases = [
+            "weather",
+            "temperature",
+            "climate",
+            "forecast",
+            "what is the",
+            "tell me the",
+            "at",
+            "in",
+            "of",
+            "for"
+        ]
+
+        for phrase in phrases:
+            city = city.replace(phrase, "")
+
+        city = city.strip()
+
+        if city:
+
+            weather = get_weather(city)
+
+            speak(weather)
+
+        else:
+
+            speak(
+                "Please specify a city name."
+            )
+
+    # News
+
+    elif "news" in command:
+
+        headlines = get_news()
+
+        speech_text = (
+            "Here are the latest headlines. "
+        )
+
+        for i, news in enumerate(headlines, start=1):
+
+            print(f"{i}. {news}")
+
+            speech_text += (
+                f"Headline {i}. {news}. "
+            )
+
+        speak(speech_text)
+
+    # Reminder
+
+    elif any(keyword in command for keyword in [
+        "reminder",
+        "remind me"
+    ]):
+
+        words = command.split()
+
+        seconds = None
+
+        for word in words:
+
+            if word.isdigit():
+
+                seconds = int(word)
+
+                break
+
+        if seconds is None:
+
+            speak(
+                "Please specify time in seconds."
+            )
+
+            return
+
+        message = command
+
+        phrases = [
+            "reminder",
+            "remind me",
+            "set reminder",
+            "set a reminder",
+            "for",
+            "in",
+            "seconds",
+            "second",
+            "to"
+        ]
+
+        for phrase in phrases:
+            message = message.replace(
+                phrase,
+                ""
+            )
+
+        message = message.replace(
+            str(seconds),
+            ""
+        )
+
+        message = message.strip()
+
+        if not message:
+            message = "Reminder"
+
+        set_reminder(
+            message,
+            seconds
+        )
+
+    # Exit
+
+    elif any(keyword in command for keyword in [
+        "exit",
+        "quit",
+        "bye",
+        "goodbye"
+    ]):
+
+        speak(
+            "Goodbye. Have a great day."
+        )
+
+        return False
+
+    else:
+
+        speak(
+            "Sorry, I did not understand that command."
+        )
+
+    return True
+
+
+# =========================
+# MAIN
+# =========================
+
+if __name__ == "__main__":
+
+    speak(
+        "Hello, I am your personal assistant."
+    )
+
+    while True:
+
+        print("\n1. Type Command")
+        print("2. Voice Command")
+
+        choice = input(
+            "\nChoose (1/2): "
+        ).strip()
+
+        if choice == "1":
+
+            command = input(
+                "\nYou: "
+            ).lower()
+
+        elif choice == "2":
+
+            command = listen()
+
+        else:
+
+            print("Invalid choice")
+            continue
+
+        if not process_command(command):
+            break
